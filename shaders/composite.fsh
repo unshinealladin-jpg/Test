@@ -16,7 +16,7 @@ varying vec2 texCoord;
 
 // Rayon du glow en pixels
 // Augmenter pour un halo plus large (plus visible à grande distance)
-const float BLUR_RADIUS = 6.0;
+const float BLUR_RADIUS = 3.0;
 
 // Poids gaussien pour 9 échantillons séparables
 const float GAUSS[9] = float[9](

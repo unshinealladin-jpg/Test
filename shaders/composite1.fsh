@@ -20,7 +20,7 @@ varying vec2 texCoord;
 /* DRAWBUFFERS:0 */
 
 // ---- Paramètres du blur de glow ----
-const float BLUR_RADIUS = 6.0;
+const float BLUR_RADIUS = 3.0;
 const float GAUSS[9] = float[9](
     0.0162, 0.0540, 0.1216, 0.1946, 0.2270,
     0.1946, 0.1216, 0.0540, 0.0162
@@ -35,7 +35,7 @@ const vec3 COLOR_NEUTRAL = vec3(0.10, 1.00, 0.25); // Vert
 const vec3 COLOR_OUTLINE = vec3(0.20, 0.80, 1.00);
 
 // ---- Paramètres réglables ----
-const float GLOW_STRENGTH      = 2.5;
+const float GLOW_STRENGTH      = 1.2;
 const float VISIBLE_TINT       = 0.45;
 const float GHOST_OPACITY      = 0.30; // fill ghost derrière les murs
 const float OUTLINE_OPACITY    = 1.00; // contour toujours plein
@@ -150,5 +150,5 @@ void main() {
     // Glow additif (saigne autour des coins même si l'entité est cachée)
     finalColor += glowColor * glowIntensity * GLOW_STRENGTH;
 
-    gl_FragData[0] = vec4(finalColor, scene.a);
+    gl_FragData[0] = vec4(clamp(finalColor, 0.0, 1.0), scene.a);
 }
