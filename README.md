@@ -1,82 +1,94 @@
-# ESP Shader — Minecraft 1.8.9 (OptiFine)
+# ESP Shader — Minecraft 1.8.9 (OptiFine) — Through-Wall
 
-Pack de shaders OptiFine qui ajoute un **ESP visuel** : les entités (joueurs, mobs) sont colorées et entourées d'un halo lumineux coloré.
+Pack de shaders OptiFine qui implémente un **ESP complet** :
+- Entités visibles normalement → silhouette colorée
+- Entités derrière des blocs opaques → **ghost semi-transparent** (through-wall)
+- Halo lumineux (glow) qui saigne autour des coins
 
 ## Installation
 
 1. Installer **OptiFine** pour Minecraft 1.8.9
-2. Copier le dossier `shaders/` dans :
+2. Copier le dossier `shaders/` ici :
    ```
    .minecraft/shaderpacks/ESP-Shader/shaders/
    ```
-3. Lancer Minecraft → Options → Vidéo → Shaders → sélectionner `ESP-Shader`
+3. Lancer Minecraft → Options → Vidéo → Shaders → `ESP-Shader`
 
 ---
 
-## Fichiers
+## Pipeline de rendu
 
 ```
-shaders/
-├── shaders.properties       # Configuration du pack
-│
-├── gbuffers_terrain.vsh/fsh # Terrain : rendu normal, masque ESP = 0
-├── gbuffers_entities.vsh/fsh# ENTITÉS : rendu + écriture du masque ESP
-├── gbuffers_water.vsh/fsh   # Eau : rendu normal, masque ESP = 0
-├── gbuffers_hand.vsh/fsh    # Main du joueur : pas d'ESP
-│
-├── composite.vsh/fsh        # Passe 1 : blur gaussien horizontal du masque
-├── composite1.vsh/fsh       # Passe 2 : blur vertical + application du glow
-└── final.vsh/fsh            # Sortie finale avec correction gamma
-```
+gbuffers_skybasic/skytextured.fsh
+  └── colortex0 = ciel | colortex2 = 1.0 (far plane)
 
----
+gbuffers_terrain.fsh
+  └── colortex0 = terrain | colortex2 = profondeur terrain réelle
 
-## Pipeline de rendu ESP
+gbuffers_entities.fsh  ← TRICK THROUGH-WALL
+  ├── vertex shader : pos.z = -pos.w  (near-plane trick → depth test toujours OK)
+  ├── colortex1 = masque (r=joueur, g=hostile, b=neutre, a=profondeur réelle)
+  └── gl_FragDepth = v_realDepth      (restaure la vraie profondeur)
 
-```
-gbuffers_entities.fsh
-  └── écrit colortex1 (masque : r=joueur, g=hostile, b=neutre)
+gbuffers_water/hand.fsh
+  └── colortex0 = eau + main (pas d'entités)
 
 composite.fsh
-  └── blur horizontal de colortex1 → colortex2
+  └── blur gaussien horizontal colortex1.rgb → colortex3
 
-composite1.fsh
-  ├── blur vertical de colortex2 → glow final
-  ├── teinte les pixels d'entité à 45% avec la couleur ESP
-  └── ajoute le halo lumineux en mode additif
+composite1.fsh  ← LOGIQUE ESP
+  ├── blur vertical colortex3 → glow final
+  ├── compare entityDepth (colortex1.a) vs terrainDepth (colortex2.r)
+  │     > entityDepth > terrainDepth → entité DERRIÈRE mur → ghost 40%
+  │     > sinon                      → entité VISIBLE      → tint 50%
+  └── ajoute glow additif coloré
 
 final.fsh
-  └── correction gamma et sortie écran
+  └── correction gamma + sortie
 ```
 
 ---
 
 ## Couleurs ESP
 
-| Type            | Couleur       | Entités                             |
-|-----------------|---------------|-------------------------------------|
-| Joueur (`id=1`) | Bleu `#1A8CFF`| Autres joueurs                      |
-| Hostile         | Rouge `#FF1A1A`| Zombie, Creeper, Skeleton, Enderman… |
-| Neutre          | Vert `#1AFF40` | Cochon, Vache, Mouton…              |
+| Type       | Couleur        | Entités                              |
+|------------|----------------|--------------------------------------|
+| Joueur     | Bleu `#1A8CFF` | Autres joueurs                       |
+| Hostile    | Rouge `#FF1A1A`| Zombie, Creeper, Skeleton, Enderman… |
+| Neutre     | Vert `#1AFF40` | Cochon, Vache, Villageois…           |
 
 ---
 
-## Réglages (dans `composite1.fsh`)
+## Réglages (`composite1.fsh`)
 
 ```glsl
-const float BLUR_RADIUS  = 4.0;   // Taille du halo en pixels
-const float GLOW_STRENGTH = 2.8;  // Intensité lumineuse du glow
+const float BLUR_RADIUS    = 6.0;  // Taille du halo (pixels)
+const float GLOW_STRENGTH  = 3.0;  // Intensité lumineuse du glow
+const float VISIBLE_TINT   = 0.50; // Opacité ESP sur entité visible
+const float GHOST_OPACITY  = 0.40; // Opacité ESP pour les entités à travers les murs
+const float DEPTH_BIAS     = 0.002;// Seuil z-fighting
 ```
-
-Augmenter `BLUR_RADIUS` pour un halo plus grand (plus visible à longue distance).  
-Augmenter `GLOW_STRENGTH` pour un glow plus lumineux.
 
 ---
 
-## Limitation importante
+## Hotkey
 
-Les shaders OptiFine fonctionnent en **post-processing écran** : les fragments d'entités derrière des blocs opaques sont rejetés par le depth test avant d'atteindre le shader. L'ESP est donc visible pour :
-- Les entités **partiellement visibles** (dépassant d'un mur)
-- Les entités vues à travers des blocs **transparents** (verre, eau, glace)
+Les shaders GLSL n'ont pas accès aux événements clavier — une hotkey
+pure shader n'est pas possible. Deux alternatives :
 
-Pour un ESP "à travers les murs opaques", un mod Forge avec injection du pipeline OpenGL est requis.
+1. **Touche par défaut OptiFine** : `K` désactive/réactive tous les shaders
+   (Options → Vidéo → Shaders → raccourci configurable)
+2. **Avec Forge** : ajouter un micro-mod qui envoie un uniform `espEnabled`
+   au shader via `glUniform1i`, et le tester dans `composite1.fsh`
+
+---
+
+## Note technique
+
+Le **near-plane trick** dans `gbuffers_entities.vsh` :
+```glsl
+pos.z = -pos.w; // NDC z = -1 → toujours au plan proche → depth test passe
+```
+permet aux fragments d'entités de ne jamais être éliminés par le depth test,
+même derrière un bloc opaque. La vraie profondeur est ensuite restaurée via
+`gl_FragDepth` pour ne pas casser le rendu de l'eau et de la main.

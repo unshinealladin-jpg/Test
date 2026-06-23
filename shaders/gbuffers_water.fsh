@@ -7,12 +7,11 @@ varying vec4 color;
 varying vec2 texCoord;
 varying vec2 lightCoord;
 
-/* DRAWBUFFERS:01 */
+/* DRAWBUFFERS:0 */
+// Eau dans colortex0 uniquement ; colortex2 (profondeur terrain) inchangée.
 
 void main() {
     vec4 albedo = texture2D(texture, texCoord) * color;
     vec4 light  = texture2D(lightmap, lightCoord);
-
     gl_FragData[0] = albedo * light;
-    gl_FragData[1] = vec4(0.0); // eau → pas d'ESP
 }

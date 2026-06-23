@@ -7,7 +7,7 @@ varying vec4 color;
 varying vec2 texCoord;
 varying vec2 lightCoord;
 
-/* DRAWBUFFERS:01 */
+/* DRAWBUFFERS:02 */
 
 void main() {
     vec4 albedo = texture2D(texture, texCoord) * color;
@@ -15,9 +15,10 @@ void main() {
 
     vec4 light = texture2D(lightmap, lightCoord);
 
-    // colortex0 : couleur normale du terrain
+    // colortex0 : couleur du terrain (scène sans entités)
     gl_FragData[0] = albedo * light;
 
-    // colortex1 : terrain → pas d'entité, masque à zéro
-    gl_FragData[1] = vec4(0.0);
+    // colortex2 : profondeur du terrain stockée en valeur [0,1]
+    // Utilisée dans composite1 pour distinguer entité visible vs derrière un mur
+    gl_FragData[1] = vec4(gl_FragCoord.z, 0.0, 0.0, 1.0);
 }
