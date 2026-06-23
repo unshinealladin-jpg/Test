@@ -1,87 +1,82 @@
-# ESP Shader — Minecraft 1.8.9 Forge Mod
+# ESP Shader — Minecraft 1.8.9 (OptiFine)
 
-Mod Forge pour Minecraft 1.8.9 qui implémente un **ESP (Extra Sensory Perception)** via des shaders GLSL.  
-Les entités (joueurs, mobs) sont visibles à travers les blocs avec un rendu coloré semi-transparent + contour.
+Pack de shaders OptiFine qui ajoute un **ESP visuel** : les entités (joueurs, mobs) sont colorées et entourées d'un halo lumineux coloré.
+
+## Installation
+
+1. Installer **OptiFine** pour Minecraft 1.8.9
+2. Copier le dossier `shaders/` dans :
+   ```
+   .minecraft/shaderpacks/ESP-Shader/shaders/
+   ```
+3. Lancer Minecraft → Options → Vidéo → Shaders → sélectionner `ESP-Shader`
 
 ---
 
-## Structure du projet
+## Fichiers
 
 ```
-src/
-└── main/
-    ├── java/com/espshader/
-    │   ├── ESPMod.java              # Point d'entrée Forge
-    │   ├── ESPEventHandler.java     # Hooks rendu & clavier
-    │   └── shader/
-    │       ├── ShaderProgram.java   # Chargement / compilation GLSL
-    │       └── ESPShaderRenderer.java  # Rendu ESP (3 passes OpenGL)
-    └── resources/
-        ├── mcmod.info
-        └── assets/espshader/shaders/
-            ├── esp.vert             # Vertex shader (outline extrusion)
-            └── esp.frag             # Fragment shader (colorisation)
-```
-
----
-
-## Fonctionnement des shaders
-
-### `esp.vert` — Vertex Shader
-- Extrude les sommets le long de la normale en clip-space pour générer l'épaisseur du contour (`outlineWidth`).
-
-### `esp.frag` — Fragment Shader
-- `fillMode = true`  → couleur ESP semi-transparente (silhouette de l'entité).
-- `fillMode = false` → couleur ESP opaque (outline du contour extrudé).
-
-### Stratégie de rendu en 2 passes (dans `ESPShaderRenderer`)
-1. **Passe fill** : depth test désactivé + shader couleur semi-transparente → silhouette visible à travers les murs.
-2. **Passe outline** : outline extrudé opaque → contour net coloré.
-
----
-
-## Couleurs par défaut
-
-| Type d'entité | Couleur        |
-|---------------|----------------|
-| Joueur        | Bleu `#0078FF` |
-| Mob hostile   | Rouge `#FF2828` |
-| Neutre        | Vert `#28FF28` |
-
----
-
-## Contrôles
-
-| Touche | Action                   |
-|--------|--------------------------|
-| `HOME` | Activer / Désactiver ESP |
-
----
-
-## Compilation
-
-Prérequis : **JDK 8**, **Gradle**, **Minecraft Forge 1.8.9-11.15.1.2318**
-
-```bash
-# Setup Forge (première fois uniquement)
-./gradlew setupDecompWorkspace
-
-# Compiler le mod
-./gradlew build
-
-# Le .jar se trouve dans build/libs/
+shaders/
+├── shaders.properties       # Configuration du pack
+│
+├── gbuffers_terrain.vsh/fsh # Terrain : rendu normal, masque ESP = 0
+├── gbuffers_entities.vsh/fsh# ENTITÉS : rendu + écriture du masque ESP
+├── gbuffers_water.vsh/fsh   # Eau : rendu normal, masque ESP = 0
+├── gbuffers_hand.vsh/fsh    # Main du joueur : pas d'ESP
+│
+├── composite.vsh/fsh        # Passe 1 : blur gaussien horizontal du masque
+├── composite1.vsh/fsh       # Passe 2 : blur vertical + application du glow
+└── final.vsh/fsh            # Sortie finale avec correction gamma
 ```
 
 ---
 
-## Configuration API
+## Pipeline de rendu ESP
 
-```java
-ESPShaderRenderer renderer = ESPShaderRenderer.getInstance();
-
-renderer.setEnabled(true);
-renderer.setOutlineWidth(2.0f);
-renderer.setColorPlayer(new Color(0, 200, 255, 220));
-renderer.setColorEnemy(new Color(255, 50, 50, 220));
-renderer.setColorNeutral(new Color(50, 255, 50, 220));
 ```
+gbuffers_entities.fsh
+  └── écrit colortex1 (masque : r=joueur, g=hostile, b=neutre)
+
+composite.fsh
+  └── blur horizontal de colortex1 → colortex2
+
+composite1.fsh
+  ├── blur vertical de colortex2 → glow final
+  ├── teinte les pixels d'entité à 45% avec la couleur ESP
+  └── ajoute le halo lumineux en mode additif
+
+final.fsh
+  └── correction gamma et sortie écran
+```
+
+---
+
+## Couleurs ESP
+
+| Type            | Couleur       | Entités                             |
+|-----------------|---------------|-------------------------------------|
+| Joueur (`id=1`) | Bleu `#1A8CFF`| Autres joueurs                      |
+| Hostile         | Rouge `#FF1A1A`| Zombie, Creeper, Skeleton, Enderman… |
+| Neutre          | Vert `#1AFF40` | Cochon, Vache, Mouton…              |
+
+---
+
+## Réglages (dans `composite1.fsh`)
+
+```glsl
+const float BLUR_RADIUS  = 4.0;   // Taille du halo en pixels
+const float GLOW_STRENGTH = 2.8;  // Intensité lumineuse du glow
+```
+
+Augmenter `BLUR_RADIUS` pour un halo plus grand (plus visible à longue distance).  
+Augmenter `GLOW_STRENGTH` pour un glow plus lumineux.
+
+---
+
+## Limitation importante
+
+Les shaders OptiFine fonctionnent en **post-processing écran** : les fragments d'entités derrière des blocs opaques sont rejetés par le depth test avant d'atteindre le shader. L'ESP est donc visible pour :
+- Les entités **partiellement visibles** (dépassant d'un mur)
+- Les entités vues à travers des blocs **transparents** (verre, eau, glace)
+
+Pour un ESP "à travers les murs opaques", un mod Forge avec injection du pipeline OpenGL est requis.
