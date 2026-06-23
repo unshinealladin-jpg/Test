@@ -4,13 +4,20 @@ uniform sampler2D texture;
 uniform int  entityId;    // ID de l'entité fourni par OptiFine
 uniform vec4 entityColor; // Tint (ex: flash rouge lors des dégâts)
 
-varying vec4  color;
-varying vec2  texCoord;
-varying float v_realDepth;
+varying vec4 color;
+varying vec2 texCoord;
 
-/* DRAWBUFFERS:1 */
-// On n'écrit PAS dans colortex0 : la scène principale reste terrain-seulement.
-// Toutes les données ESP vont dans colortex1.
+/* DRAWBUFFERS:01 */
+// colortex0 = scène : on y peint l'entité teintée (visible à travers les murs)
+// colortex1 = masque ESP pour le contour dessiné dans composite
+
+// ---- Couleurs ESP ----
+const vec3 COLOR_PLAYER  = vec3(0.10, 0.55, 1.00); // Bleu
+const vec3 COLOR_HOSTILE = vec3(1.00, 0.10, 0.10); // Rouge
+const vec3 COLOR_NEUTRAL = vec3(0.10, 1.00, 0.25); // Vert
+
+// Intensité de la teinte appliquée au corps de l'entité (0 = couleur réelle, 1 = couleur ESP pleine)
+const float BODY_TINT = 0.55;
 
 // IDs mobs hostiles Minecraft 1.8.9
 bool isHostile(int id) {
@@ -36,25 +43,25 @@ bool isHostile(int id) {
 
 void main() {
     vec4 albedo = texture2D(texture, texCoord) * color;
-    // Application du tint (flash de dégâts etc.)
     albedo.rgb = mix(albedo.rgb, entityColor.rgb, entityColor.a);
     if (albedo.a < 0.1) discard;
 
-    // Détermination du type ESP
+    // Type d'entité
     float isPlayer  = (entityId == 1)      ? 1.0 : 0.0;
     float isEnemy   = isHostile(entityId)  ? 1.0 : 0.0;
-    // Tout ce qui n'est ni joueur ni hostile = neutre (animaux, villageois…)
     float isNeutral = (isPlayer < 0.5 && isEnemy < 0.5) ? 1.0 : 0.0;
 
-    // colortex1 :
-    //   r = 1.0 si joueur        → glow bleu dans composite
-    //   g = 1.0 si hostile       → glow rouge
-    //   b = 1.0 si neutre        → glow vert
-    //   a = profondeur réelle [0,1] → comparée à la profondeur terrain dans composite1
-    gl_FragData[0] = vec4(isPlayer, isEnemy, isNeutral, v_realDepth);
+    vec3 espColor = isPlayer  * COLOR_PLAYER
+                  + isEnemy   * COLOR_HOSTILE
+                  + isNeutral * COLOR_NEUTRAL;
 
-    // Restaure la vraie profondeur dans le depth buffer.
-    // Sans ça, le near-plane trick laisserait z=0 partout et casserait
-    // le rendu de l'eau et de la main du joueur qui viennent après.
-    gl_FragDepth = v_realDepth;
+    // colortex0 : corps de l'entité teinté (gardant un peu de texture pour rester lisible)
+    vec3 body = mix(albedo.rgb, espColor, BODY_TINT);
+    gl_FragData[0] = vec4(body, albedo.a);
+
+    // colortex1 : masque pour le contour (r=joueur, g=hostile, b=neutre)
+    gl_FragData[1] = vec4(isPlayer, isEnemy, isNeutral, 1.0);
+
+    // PAS de gl_FragDepth : on laisse la profondeur au plan proche
+    // pour que l'entité reste visible à travers les murs.
 }
