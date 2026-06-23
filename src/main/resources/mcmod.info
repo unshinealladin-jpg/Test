@@ -1,0 +1,16 @@
+[
+{
+    "modid": "espshader",
+    "name": "ESP Shader",
+    "description": "Mod ESP avec shaders GLSL pour Minecraft 1.8.9 - Affiche les entités à travers les blocs.",
+    "version": "${version}",
+    "mcversion": "${mcversion}",
+    "url": "",
+    "updateUrl": "",
+    "authorList": ["ESP Dev"],
+    "credits": "",
+    "logoFile": "",
+    "screenshots": [],
+    "dependencies": []
+}
+]
